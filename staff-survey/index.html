@@ -199,6 +199,14 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
 .formrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
 .formrow input[type=number]{width:4.6em;padding:6px 8px}
 .formrow input[type=password]{flex:1 1 12em;min-width:0;padding:6px 10px;font-size:14px}
+.pgrid{display:grid;gap:10px}
+.pq{border-top:1px solid var(--grid);padding-top:10px}
+.pq:first-child{border-top:0;padding-top:0}
+.pq .row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:6px;font-size:13px}
+.pq input[type=number]{width:4.6em;padding:4px 6px;text-align:right;font-size:14px}
+.pq textarea{width:100%;min-height:56px;margin-top:6px;font-size:14px;padding:8px 10px}
+.radios{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted)}
+.radios label{display:flex;align-items:center;gap:6px}
 .empty{background:var(--surface);border:1px dashed var(--line);border-radius:14px;padding:28px 20px;text-align:center;color:var(--muted)}
 </style>
 </head>
@@ -312,8 +320,20 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
     <h2 class="sec">回ごとの推移 <span class="sub">平均点（5点満点）。色が濃いほど高評価。列見出しを押すとその回を表示します</span></h2>
     <div class="tablewrap" id="trend"></div>
 
-    <h2 class="sec">意見のまとめ <span class="sub">AI要約はClaudeの集計画面で作成すると、ここにも表示されます</span></h2>
+    <h2 class="sec">設問ごとの意見</h2>
     <div class="ops" id="ops"></div>
+
+    <section id="paperSec" hidden>
+      <h2 class="sec">紙の集計値の入力 <span class="sub">紙で実施した回の結果を入力すると、ほかの回と比べられます</span></h2>
+      <div class="card">
+        <p class="muted" style="margin:0 0 10px">各設問の「1〜5点の人数」を入れると、平均と人数は自動で計算します。内訳がない場合は平均と人数だけ入れてください。意見は1行に1件ずつ入力します。</p>
+        <div class="pgrid" id="paperForm"></div>
+        <div class="formrow">
+          <button type="button" class="btn sm" id="paperSave">この内容で保存</button>
+          <span id="paperMsg" class="muted" role="status"></span>
+        </div>
+      </div>
+    </section>
 
     <h2 class="sec">回答一覧 <button type="button" class="btn ghost sm" id="csvBtn" hidden>CSVで書き出す（Excel用）</button></h2>
     <div id="respList"></div>
@@ -323,7 +343,11 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
       <div class="card">
         <h3>回の一覧</h3>
         <div id="rounds"></div>
-        <h3 style="margin-top:16px">新しい回を作る（作成と同時に受付開始）</h3>
+        <h3 style="margin-top:16px">新しい回を作る</h3>
+        <div class="radios">
+          <label><input type="radio" name="newSource" id="newSrcApp" value="app" checked> このページで回答を集める（作成と同時に受付開始）</label>
+          <label><input type="radio" name="newSource" id="newSrcPaper" value="paper"> 紙で実施した回（集計値を入力）</label>
+        </div>
         <div class="formrow">
           <span class="muted">令和</span><input type="number" id="newYear" min="1" max="99">
           <span class="muted">年度</span><input type="number" id="newNo" min="1" max="9" value="1">
@@ -339,7 +363,7 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
           <div class="formrow"><input type="password" id="pwNew" placeholder="新しいパスワード（8文字以上）" autocomplete="new-password" minlength="8" required></div>
           <div class="formrow"><button type="submit" class="btn sm">変更する</button><span id="pwMsg" class="muted" role="status"></span></div>
         </form>
-        <p class="muted" style="margin:10px 0 0">変更すると、ほかの端末でのログインは解除されます。紙で実施した回の入力は、Claudeの集計画面から行えます。</p>
+        <p class="muted" style="margin:10px 0 0">変更すると、ほかの端末でのログインは解除されます。</p>
       </div>
     </div>
   </div>
@@ -742,7 +766,7 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
         '<div class="val prev">' + (cmp.round ? fmt2(pAvg) + '<small>' + pct(pAvg) + '・' + (p.n || 0) + '人</small>' : '') + '</div>' +
         '<div class="val">' + (cmp.round ? deltaHtml(c.avg, pAvg) : '') + '</div></div>';
     }
-    if (!cur.count) html += '<div class="qrow"><div class="muted" style="grid-column:1/-1">この回の回答はまだありません。回答が届いたら「最新に更新」を押してください。</div></div>';
+    if (!cur.count) html += '<div class="qrow"><div class="muted" style="grid-column:1/-1">' + (cur.round && cur.round.source === "paper" ? 'この回の集計値はまだ入力されていません。下の「紙の集計値の入力」から入力できます。' : 'この回の回答はまだありません。回答が届いたら「最新に更新」を押してください。') + '</div></div>';
     $("qtable").innerHTML = html;
   }
   function heatStyle(v) {
@@ -815,9 +839,71 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
     $("ops").innerHTML = html;
   }
 
+  function renderPaper(cur) {
+    var r = cur.round;
+    $("paperSec").hidden = !(r && r.source === "paper");
+    if (!r || r.source !== "paper") return;
+    if ($("paperForm").dataset.round === r.id && $("paperForm").dataset.dirty === "1") return;  // 入力中は上書きしない
+    var rows = state.paper.filter(function (p) { return p.round_id === r.id; });
+    var html = "";
+    for (var idx = 0; idx <= 10; idx++) {
+      var q = idx === 10 ? 0 : idx + 1;
+      var p = rows.find(function (x) { return x.q_no === q; }) || {};
+      html += '<div class="pq"><b>' + (q ? 'Q' + q + '　' + esc(SHORT[q - 1]) : 'その他ご意見') + '</b>';
+      if (q) {
+        html += '<div class="row">人数の内訳';
+        for (var k = 0; k < 5; k++) html += '<label>' + (k + 1) + '点 <input type="number" inputmode="numeric" min="0" step="1" id="pd' + q + '_' + k + '" value="' + (p.dist ? esc(p.dist[k]) : '') + '"></label>';
+        html += '</div><div class="row">内訳がない場合：<label>平均 <input type="number" inputmode="decimal" min="1" max="5" step="0.01" id="pa' + q + '" value="' + (p.avg != null ? esc(p.avg) : '') + '"></label>' +
+          '<label>人数 <input type="number" inputmode="numeric" min="0" step="1" id="pn' + q + '" value="' + (p.n != null ? esc(p.n) : '') + '"></label></div>';
+      }
+      html += '<textarea id="po' + q + '" placeholder="意見（1行に1件）">' + esc((p.opinions || []).join("\n")) + '</textarea></div>';
+    }
+    $("paperForm").innerHTML = html;
+    $("paperForm").dataset.round = r.id;
+    $("paperForm").dataset.dirty = "";
+    $("paperMsg").textContent = "";
+  }
+  $("paperForm").addEventListener("input", function () { $("paperForm").dataset.dirty = "1"; });
+  function intOrNull(v) { if (v === "" || v == null) return null; var n = Number(v); return Number.isInteger(n) && n >= 0 && n < 100000 ? n : NaN; }
+  $("paperSave").addEventListener("click", function () {
+    var r = roundById(sel.round);
+    if (!r || r.source !== "paper") return;
+    var rows = [];
+    for (var idx = 0; idx <= 10; idx++) {
+      var q = idx === 10 ? 0 : idx + 1;
+      var n = null, avg = null, dist = null;
+      if (q) {
+        var ds = [0, 1, 2, 3, 4].map(function (k) { return intOrNull($("pd" + q + "_" + k).value); });
+        if (ds.some(function (x) { return Number.isNaN(x); })) { $("paperMsg").textContent = "Q" + q + " の人数は0以上の整数で入力してください。"; return; }
+        var filled = ds.filter(function (x) { return x !== null; }).length;
+        if (filled === 5) {
+          dist = ds; n = ds.reduce(function (a, b) { return a + b; }, 0);
+          avg = n ? Math.round(ds.reduce(function (a, c, k) { return a + c * (k + 1); }, 0) / n * 100) / 100 : null;
+        } else if (filled > 0) {
+          $("paperMsg").textContent = "Q" + q + " の内訳は1〜5点すべて入力してください（0人の欄は0）。"; return;
+        } else {
+          var av = $("pa" + q).value, nn = intOrNull($("pn" + q).value);
+          if (av !== "") { avg = Number(av); if (!(avg >= 1 && avg <= 5)) { $("paperMsg").textContent = "Q" + q + " の平均は1〜5で入力してください。"; return; } avg = Math.round(avg * 100) / 100; }
+          if (Number.isNaN(nn)) { $("paperMsg").textContent = "Q" + q + " の人数は0以上の整数で入力してください。"; return; }
+          n = nn;
+        }
+      }
+      var ops = $("po" + q).value.split(/\r?\n/).map(function (t) { return t.trim(); }).filter(Boolean);
+      rows.push({ q_no: q, n: n, avg: avg, dist: dist, opinions: ops });
+    }
+    var btn = $("paperSave"); btn.disabled = true; $("paperMsg").textContent = "保存しています…";
+    adminAction("save_paper", { round_id: r.id, rows: rows })
+      .then(function (res) {
+        if (res && res.ok) { $("paperForm").dataset.dirty = ""; $("paperMsg").textContent = "保存しました。"; loadAll(); }
+        else $("paperMsg").textContent = "保存できませんでした。入力内容を確認してください。";
+      })
+      .catch(function (err) { if (!(err && err.handled)) $("paperMsg").textContent = "通信できませんでした。もう一度お試しください。"; })
+      .finally(function () { btn.disabled = false; });
+  });
+
   function renderList(cur) {
     var r = cur.round;
-    if (!r || r.source === "paper") { $("respList").innerHTML = '<div class="empty">紙で実施した回は、集計値のみを保存しています。</div>'; $("csvBtn").hidden = true; return; }
+    if (!r || r.source === "paper") { $("respList").innerHTML = '<div class="empty">紙で実施した回は、上の「紙の集計値の入力」で入力した集計値のみを保存しています。</div>'; $("csvBtn").hidden = true; return; }
     var rows = state.responses.filter(function (x) { return x.round_id === r.id; });
     $("csvBtn").hidden = !rows.length;
     if (!rows.length) { $("respList").innerHTML = '<div class="empty">この回の回答はまだありません。</div>'; return; }
@@ -922,10 +1008,11 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
     var y = Number($("newYear").value), no = Number($("newNo").value);
     if (!Number.isInteger(y) || y < 1 || y > 99 || !Number.isInteger(no) || no < 1 || no > 9) { $("roundMsg").textContent = "年度（1〜99）と回目（1〜9）を数字で入力してください。"; return; }
     var btn = $("newRoundBtn"); btn.disabled = true;
-    adminAction("create_round", { year: y, no: no })
+    var source = $("newSrcPaper").checked ? "paper" : "app";
+    adminAction("create_round", { year: y, no: no, source: source })
       .then(function (res) {
         if (res && res.ok) {
-          $("roundMsg").textContent = "「" + res.label + "」を作成し、受付を開始しました。";
+          $("roundMsg").textContent = res.source === "paper" ? "「" + res.label + "」を作成しました。「紙の集計値の入力」から結果を入力してください。" : "「" + res.label + "」を作成し、受付を開始しました。";
           sel.round = res.id; sel.comp = null;
           $("newYear").value = "";
           loadAll();
@@ -959,6 +1046,7 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
     renderScores(cur, cmp);
     renderTrend();
     renderOpinions(cur);
+    renderPaper(cur);
     renderList(cur);
     renderRounds();
   }
