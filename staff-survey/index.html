@@ -400,6 +400,9 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function store(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (_) {} }
   function load(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+  // 管理者のログイン情報はタブを閉じると消える場所に置く（アプリを閉じたら自動でログアウト）
+  function storeSession(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (_) {} }
+  function loadSession(k) { try { return sessionStorage.getItem(k); } catch (_) { return null; } }
 
   function api(path, opts) {
     opts = opts || {};
@@ -564,15 +567,15 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
 
   function readToken() {
     try {
-      var t = JSON.parse(load(TOKEN_KEY) || "null");
+      var t = JSON.parse(loadSession(TOKEN_KEY) || "null");
       if (t && t.token && new Date(t.expires_at) > new Date()) return t.token;
     } catch (_) {}
-    store(TOKEN_KEY, null);
+    storeSession(TOKEN_KEY, null);
     return null;
   }
   function signedOut(msg) {
     token = null; loaded = false;
-    store(TOKEN_KEY, null);
+    storeSession(TOKEN_KEY, null);
     $("dash").hidden = true; $("adminBar").hidden = true; $("loginArea").hidden = false;
     $("loginMsg").innerHTML = msg ? '<div class="banner warn">' + esc(msg) + '</div>' : "";
   }
@@ -587,7 +590,7 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
       .then(function (res) {
         if (res && res.ok) {
           token = res.token;
-          store(TOKEN_KEY, JSON.stringify({ token: res.token, expires_at: res.expires_at }));
+          storeSession(TOKEN_KEY, JSON.stringify({ token: res.token, expires_at: res.expires_at }));
           $("adminPw").value = "";
           openDash();
         } else if (res && res.error === "locked") {
@@ -599,6 +602,18 @@ details.list li .meta{display:block;font-size:11px;color:var(--muted)}
       .catch(function () { $("loginMsg").innerHTML = '<div class="banner bad">通信できませんでした。電波を確認してもう一度お試しください。</div>'; })
       .finally(function () { $("loginBtn").disabled = false; $("loginBtn").textContent = "ログイン"; });
   });
+
+  // タブやアプリを閉じたら、サーバー側のログインも終わらせる（送りっぱなしで確認はしない）
+  function endSessionOnClose(e) {
+    // スマホでアプリを裏に回しただけのとき（復帰できる状態）は何もしない
+    if (!token || (e && e.persisted)) return;
+    try {
+      var blob = new Blob([JSON.stringify({ p_token: token, p_action: "logout", p_args: {} })], { type: "application/json" });
+      navigator.sendBeacon(SUPABASE_URL + "/rest/v1/rpc/staff_survey_admin_action?apikey=" + encodeURIComponent(SUPABASE_KEY), blob);
+    } catch (_) {}
+    storeSession(TOKEN_KEY, null);
+  }
+  window.addEventListener("pagehide", endSessionOnClose);
 
   function openDash() {
     $("loginArea").hidden = true; $("dash").hidden = false; $("adminBar").hidden = false;
